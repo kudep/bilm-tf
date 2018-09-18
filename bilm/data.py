@@ -191,7 +191,7 @@ class UnicodeCharsVocabulary(Vocabulary):
 
 
 class Batcher(object):
-    ''' 
+    '''
     Batch sentences of tokenized text into character id matrices.
     '''
     def __init__(self, lm_vocab_file: str, max_token_length: int):
@@ -230,7 +230,7 @@ class Batcher(object):
 
 
 class TokenBatcher(object):
-    ''' 
+    '''
     Batch sentences of tokenized text into token id matrices.
     '''
     def __init__(self, lm_vocab_file: str):
@@ -320,7 +320,7 @@ class LMDataset(object):
         per line.  Each sentence is pre-tokenized and white space joined.
     """
     def __init__(self, filepattern, vocab, reverse=False, test=False,
-                 shuffle_on_load=False):
+                 shuffle_on_load=False, get_aug_shard_name = None):
         '''
         filepattern = a glob string that specifies the list of files.
         vocab = an instance of Vocabulary or UnicodeCharsVocabulary
@@ -337,6 +337,7 @@ class LMDataset(object):
         self._reverse = reverse
         self._test = test
         self._shuffle_on_load = shuffle_on_load
+        self._get_aug_shard_name = get_aug_shard_name
         self._use_char_inputs = hasattr(vocab, 'encode_chars')
 
         self._ids = self._load_random_shard()
@@ -367,6 +368,14 @@ class LMDataset(object):
         self._nids = len(ids)
         return ids
 
+    def _reverse_sentence(self, sentences_raw):
+        sentences = []
+        for sentence in sentences_raw:
+            splitted = sentence.split()
+            splitted.reverse()
+            sentences.append(' '.join(splitted))
+        return sentences
+
     def _load_shard(self, shard_name):
         """Read one file and convert to ids.
 
@@ -376,29 +385,52 @@ class LMDataset(object):
         Returns:
             list of (id, char_id) tuples.
         """
-        print('Loading data from: %s' % shard_name)
-        with open(shard_name) as f:
-            sentences_raw = f.readlines()
-
-        if self._reverse:
+        def reverse_sentence(sentences_raw):
             sentences = []
             for sentence in sentences_raw:
                 splitted = sentence.split()
                 splitted.reverse()
                 sentences.append(' '.join(splitted))
+            return sentences
+
+        def get_sentence(shard_name):
+            print('Loading data from: %s' % shard_name)
+            with open(shard_name) as f:
+                sentences_raw = f.readlines()
+
+            if self._reverse:
+                sentences = reverse_sentence(sentences_raw)
+            else:
+                sentences = sentences_raw
+            return sentences
+
+        if self._get_aug_shard_name:
+            features_shard_name, labels_shard_name = self._get_aug_shard_name(shard_name)
+            features_sentences = get_sentence(features_shard_name)
+            labels_sentences = get_sentence(labels_shard_name)
+            sentences = list(zip(features_sentences, labels_sentences))
         else:
-            sentences = sentences_raw
+            sentences = get_sentence(shard_name)
 
         if self._shuffle_on_load:
             random.shuffle(sentences)
 
-        ids = [self.vocab.encode(sentence, self._reverse)
-               for sentence in sentences]
-        if self._use_char_inputs:
-            chars_ids = [self.vocab.encode_chars(sentence, self._reverse)
-                     for sentence in sentences]
+        if self._get_aug_shard_name:
+            ids = [self.vocab.encode(sentence[1], self._reverse)
+                   for sentence in sentences]
+            if self._use_char_inputs:
+                chars_ids = [self.vocab.encode_chars(sentence[0], self._reverse)
+                         for sentence in sentences]
+            else:
+                chars_ids = [None] * len(ids)
         else:
-            chars_ids = [None] * len(ids)
+            ids = [self.vocab.encode(sentence, self._reverse)
+                   for sentence in sentences]
+            if self._use_char_inputs:
+                chars_ids = [self.vocab.encode_chars(sentence, self._reverse)
+                         for sentence in sentences]
+            else:
+                chars_ids = [None] * len(ids)
 
         print('Loaded %d sentences.' % len(ids))
         print('Finished loading')
@@ -433,16 +465,16 @@ class LMDataset(object):
         return self._vocab
 
 class BidirectionalLMDataset(object):
-    def __init__(self, filepattern, vocab, test=False, shuffle_on_load=False):
+    def __init__(self, filepattern, vocab, test=False, shuffle_on_load=False, get_aug_shard_name = None):
         '''
         bidirectional version of LMDataset
         '''
         self._data_forward = LMDataset(
             filepattern, vocab, reverse=False, test=test,
-            shuffle_on_load=shuffle_on_load)
+            shuffle_on_load=shuffle_on_load, get_aug_shard_name = get_aug_shard_name)
         self._data_reverse = LMDataset(
             filepattern, vocab, reverse=True, test=test,
-            shuffle_on_load=shuffle_on_load)
+            shuffle_on_load=shuffle_on_load, get_aug_shard_name = get_aug_shard_name)
 
     def iter_batches(self, batch_size, num_steps):
         max_word_length = self._data_forward.max_word_length
@@ -462,4 +494,3 @@ class BidirectionalLMDataset(object):
 
 class InvalidNumberOfCharacters(Exception):
     pass
-

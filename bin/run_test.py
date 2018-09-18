@@ -4,6 +4,11 @@ import argparse
 from bilm.training import test, load_options_latest_checkpoint, load_vocab
 from bilm.data import LMDataset, BidirectionalLMDataset
 
+def get_aug_shard_name(shard_name):
+    features_shard_name = shard_name
+    labels_shard_name = shard_name[:-3]+"clean"
+    return features_shard_name, labels_shard_name
+
 def main(args):
     options, ckpt_file = load_options_latest_checkpoint(args.save_dir)
 
@@ -19,6 +24,7 @@ def main(args):
     kwargs = {
         'test': True,
         'shuffle_on_load': False,
+        'get_aug_shard_name': get_aug_shard_name,
     }
 
     if options.get('bidirectional'):
@@ -40,4 +46,3 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     main(args)
-

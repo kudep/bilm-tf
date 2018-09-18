@@ -1,4 +1,5 @@
 
+
 import argparse
 
 import numpy as np
@@ -6,6 +7,10 @@ import numpy as np
 from bilm.training import train, load_options_latest_checkpoint, load_vocab
 from bilm.data import BidirectionalLMDataset
 
+def get_aug_shard_name(shard_name):
+    features_shard_name = shard_name
+    labels_shard_name = shard_name[:-3]+"clean"
+    return features_shard_name, labels_shard_name
 
 def main(args):
     # load the vocab
@@ -13,7 +18,7 @@ def main(args):
 
     # define the options
     batch_size = 128  # batch size for each GPU
-    n_gpus = 3
+    n_gpus = 1
 
     # number of tokens in training data (this for 1B Word Benchmark)
     n_train_tokens = 768648884
@@ -33,9 +38,9 @@ def main(args):
       'max_characters_per_token': 50,
       'n_characters': 261,
       'n_highway': 2},
-    
+
      'dropout': 0.1,
-    
+
      'lstm': {
       'cell_clip': 3,
       'dim': 4096,
@@ -43,9 +48,9 @@ def main(args):
       'proj_clip': 3,
       'projection_dim': 512,
       'use_skip_connections': True},
-    
+
      'all_clip_norm_val': 10.0,
-    
+
      'n_epochs': 10,
      'n_train_tokens': n_train_tokens,
      'batch_size': batch_size,
@@ -56,7 +61,7 @@ def main(args):
 
     prefix = args.train_prefix
     data = BidirectionalLMDataset(prefix, vocab, test=False,
-                                      shuffle_on_load=True)
+                                      shuffle_on_load=True, get_aug_shard_name=get_aug_shard_name)
 
     tf_save_dir = args.save_dir
     tf_log_dir = args.save_dir
@@ -71,4 +76,3 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     main(args)
-
